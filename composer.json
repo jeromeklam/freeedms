@@ -1,0 +1,25 @@
+{
+    "name"        : "jeromeklam/freeedms",
+    "type"        : "library",
+    "description" : "Free PHP EDMS",
+    "keywords"    : ["FREE", "EDMS", "PHP"],
+    "homepage"    : "http://github.com/jeromeklam",
+    "license"     : "MIT",
+    "authors" : [
+        {
+            "name"  : "KLAM Jérôme",
+            "email" : "jeromeklam@free.fr"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require" : {
+        "php"                                  : ">=7.0",
+        "jeromeklam/freefw"                    : "*",
+        "psr/log"                              : "*"
+    },
+    "autoload" : {
+        "psr-4" : {
+            "FreeEDMS\\" : "src/FreeEDMS/"
+        }
+    }
+}
