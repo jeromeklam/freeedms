@@ -35,7 +35,7 @@ abstract class GedDocument extends \FreeEDMS\Model\StorageModel\Base
         FFCST::PROPERTY_TYPE    => FFCST::TYPE_STRING,
         FFCST::PROPERTY_OPTIONS => [FFCST::OPTION_REQUIRED],
         FFCST::PROPERTY_COMMENT => 'Identifiant extern du fichier sur disque',
-        FFCST::PROPERTY_MAX     => 80,
+        FFCST::PROPERTY_MAX     => 120,
         FFCST::PROPERTY_SAMPLE  => '8bcbf4e636f74ad483b725f1223baa3e',
     ];
 
@@ -77,7 +77,35 @@ abstract class GedDocument extends \FreeEDMS\Model\StorageModel\Base
         FFCST::PROPERTY_TYPE    => FFCST::TYPE_TEXT,
         FFCST::PROPERTY_OPTIONS => [],
         FFCST::PROPERTY_COMMENT => 'Description du fichier',
+//      FFCST::PROPERTY_MAX     => 2000,
         FFCST::PROPERTY_SAMPLE  => 'je suis utile à...',
+    ];
+
+    protected static $PRP_DOC_ORIG_THEME = [
+        FFCST::PROPERTY_PRIVATE => 'doc_orig_theme',
+        FFCST::PROPERTY_TYPE    => FFCST::TYPE_TEXT,
+        FFCST::PROPERTY_OPTIONS => [],
+        FFCST::PROPERTY_COMMENT => '',
+        FFCST::PROPERTY_MAX     => 20,
+        FFCST::PROPERTY_SAMPLE  => 'THEME',
+    ];
+
+    protected static $PRP_DOC_ORIG_TYPE = [
+        FFCST::PROPERTY_PRIVATE => 'doc_orig_type',
+        FFCST::PROPERTY_TYPE    => FFCST::TYPE_TEXT,
+        FFCST::PROPERTY_OPTIONS => [],
+        FFCST::PROPERTY_COMMENT => '',
+        FFCST::PROPERTY_MAX     => 20,
+        FFCST::PROPERTY_SAMPLE  => 'TYPE',
+    ];
+
+    protected static $PRP_DOC_ORIG_ANYID = [
+        FFCST::PROPERTY_PRIVATE => 'doc_orig_anyid',
+        FFCST::PROPERTY_TYPE    => FFCST::TYPE_TEXT,
+        FFCST::PROPERTY_OPTIONS => [],
+        FFCST::PROPERTY_COMMENT => 'identifiant unique de la source',
+        FFCST::PROPERTY_MAX     => 80,
+        FFCST::PROPERTY_SAMPLE  => 'DVER_FILE_VERSION_0123456789',
     ];
 
     /**
@@ -95,6 +123,9 @@ abstract class GedDocument extends \FreeEDMS\Model\StorageModel\Base
             'doc_to'            => self::$PRP_DOC_TO,
             'doc_from'          => self::$PRP_DOC_FROM,
             'doc_desc'          => self::$PRP_DOC_DESC,
+            'doc_orig_theme'    => self::$PRP_DOC_ORIG_THEME,
+            'doc_orig_type'     => self::$PRP_DOC_ORIG_TYPE,
+            'doc_orig_anyid'    => self::$PRP_DOC_ORIG_ANYID,
         ];
     }
 
@@ -145,6 +176,14 @@ abstract class GedDocument extends \FreeEDMS\Model\StorageModel\Base
      */
     public function getRelationships()
     {
-        return [];
+        return [
+            'document_versions' => [
+                FFCST::REL_MODEL   => 'FreeEDMS::Model::GedDocumentVersion',
+                FFCST::REL_FIELD   => 'doc_id',
+                FFCST::REL_TYPE    => \FreeFW\Model\Query::JOIN_LEFT,
+                FFCST::REL_COMMENT => '',
+//              FFCST::REL_REMOVE  => FFCST::REL_REMOVE_CASCADE
+            ]
+        ];
     }
 }
