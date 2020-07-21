@@ -21,10 +21,10 @@ class Edms implements
     use \FreeEDMS\Model\Behaviour\GedDocument;
 
     /**
-     * dirname de la ged en mode local !
+     * dirname de la ged
      * @var string
      */
-    protected $dirname_ged = null;
+    static $dirname_ged = null;
 
     /**
      * content_file est un pointeur vers le contenu du fichier à traiter
@@ -53,14 +53,14 @@ class Edms implements
             $this->setLogger(\FreeFW\DI\DI::getShared('logger'));
         }
 
-        $this->dirname_ged = $this->getAppConfig()->get('ged:dirname', null);
+        self::$dirname_ged = $this->getAppConfig()->get('ged:dirname', null);
 
-        if ($this->dirname_ged === false || $this->dirname_ged === '' || $this->dirname_ged == null) {
-            $this->dirname_ged = null;
-        } else if (!is_dir($this->dirname_ged)) {
-            $this->dirname_ged = null;
+        if (self::$dirname_ged === false || self::$dirname_ged === '' || self::$dirname_ged == null) {
+            self::$dirname_ged = null;
+        } else if (!is_dir(self::$dirname_ged)) {
+            self::$dirname_ged = null;
         } else {
-            $this->dirname_ged = rtrim(str_replace('\\', '/',  $this->dirname_ged), '/');
+            self::$dirname_ged = rtrim(str_replace('\\', '/',  self::$dirname_ged), '/') . '/';
         }
     }
 
@@ -73,64 +73,78 @@ class Edms implements
     {
         $this->_debug(__METHOD__, 'start');
 
-        if (!$this->verifyGed($this)) {
+        if (!$this->verifyGed()) {
         } else if (!$this->verifyDocFilename($this)) {
         } else if (!$this->verifyDocContentFile($this)) {
+        } else if (!$this->verifyDocOrigs($this)) {
         } else {
-            $filename       = false;
-            $doc_extern_id  = false;
+            $doc_extern_id = $this->getDocOrigTheme()
+                . '_' . $this->getDocOrigType()
+                . '_' . $this->getDocOrigAnyid()
+            ;
 
-            for ($i=0; $i<=8; $i++) { // on essaye 8 fois de créer un nom de fichier unique sur le disque
-                $doc_extern_id = md5(uniqid(microtime(true),true));
-                $filename = $this->dirname_ged . '/' . $doc_extern_id;
-
-                if (!is_file($filename)) { // si le fichier n'existe pas on sort
-                    break;
-                }
-
-                $filename = false;
-                usleep(100);
-            }
-
-            if ($filename === false) {
+            if (!$this->verifyFilename($doc_extern_id)) {
                 $this->addError(
-                    FECST::ERROR_GED_IMPOSSIBLE_TO_GET_EXTERNID,
-                    FECST::ERROR_GED_IMPOSSIBLE_TO_GET_EXTERNID_TEXT,
+                    FECST::ERROR_GED_EXTERNID_NOT_FILE,
+                    sprintf(FECST::ERROR_GED_EXTERNID_NOT_FILE_TEXT,$doc_extern_id),
                     \FreeFW\Core\Error::TYPE_PRECONDITION
                 );
             } else {
-                if (@file_put_contents($filename, $this->content_file) === false) {
+                $path_in_ged = str_replace('-', '/', \FreeFW\Tools\Date::getCurrentDate());
+
+                if (\FreeFW\Tools\Dir::mkpath(self::$dirname_ged . $path_in_ged) === false) {
                     $this->addError(
                         FECST::ERROR_GED_UNABLE_TO_ARCHIVE_FILE,
                         FECST::ERROR_GED_UNABLE_TO_ARCHIVE_FILE_TEXT,
                         \FreeFW\Core\Error::TYPE_ERROR
                     );
                 } else {
-                    $this->setDocExternId($doc_extern_id);
+                    $this->setGedFilename($path_in_ged . '/' . $doc_extern_id,self::$dirname_ged);
 
-                    /**
-                     * @var \FreeEDMS\Model\GedDocument $ged
-                     */
-                    $ged= \FreeFW\DI\DI::get('FreeEDMS::Model::GedDocument');
-                    $ged
-                        ->setDocExternId($this->getDocExternId())
-                        ->setDocFilename($this->getDocFilename())
-                        ->setDocDesc($this->getDocDesc())
-                    ;
-
-                    if (!$ged->create()) {
+                    if (is_file($this->getGedFilename())) {
                         $this->addError(
-                            FECST::ERROR_GED_NOT_DELETE_FILE,
-                            sprintf(FECST::ERROR_GED_NOT_DELETE_FILE_TEXT,$this->doc_extern_id),
+                            FECST::ERROR_GED_EXTERNID_EXISTS,
+                            sprintf(FECST::ERROR_GED_EXTERNID_EXISTS_TEXT,$doc_extern_id),
                             \FreeFW\Core\Error::TYPE_PRECONDITION
+                        );
+                    } else if (@file_put_contents($this->getGedFilename(), $this->content_file) === false) {
+                        $this->addError(
+                            FECST::ERROR_GED_UNABLE_TO_ARCHIVE_FILE,
+                            FECST::ERROR_GED_UNABLE_TO_ARCHIVE_FILE_TEXT,
+                            \FreeFW\Core\Error::TYPE_ERROR
+                        );
+                    } else {
+                        $this->setDocExternId($doc_extern_id);
+
+                        /**
+                         * @var \FreeEDMS\Model\GedDocumentVersion $ged
+                         */
+                        $ged = \FreeFW\DI\DI::get('FreeEDMS::Model::GedDocumentVersion');
+                        $ged
+                            ->setDocExternId($this->getDocExternId())
+                            ->setDocFilename($this->getDocFilename())
+                            ->setDocDesc($this->getDocDesc())
+                            ->setDocOrigTheme($this->getDocOrigTheme())
+                            ->setDocOrigType($this->getDocOrigType())
+                            ->setDocOrigAnyid($this->getDocOrigAnyid())
+                            ->setDverFilename($this->getDocFilename())
+                            ->setDverLocal($this->getGedFilename())
+                        ;
+
+                        if (!$ged->create()) {
+                            $this->addError(
+                                FECST::ERROR_GED_NOT_INSERT_FILE,
+                                FECST::ERROR_GED_NOT_INSERT_FILE_TEXT,
+                                \FreeFW\Core\Error::TYPE_PRECONDITION
                             );
 
-                        if ($ged->hasError()) {
-                            $this->addErrors($ged->hasError());
+                            if ($ged->hasErrors()) {
+                                $this->addErrors($ged->getErrors());
+                            }
+                        } else {
+                            $this->_debug(__METHOD__, 'end');
+                            return true;
                         }
-                    } else {
-                        $this->_debug(__METHOD__, 'end');
-                        return true;
                     }
                 }
             }
@@ -148,72 +162,117 @@ class Edms implements
      * @param boolean $p_file_must_exists false si l'existance du doc_extern_id n'est pas essentiel à la suppression
      * @return boolean
      */
-    public function removeFile($p_file_must_exists = true)
+    public function removeFile()
     {
         $this->_debug(__METHOD__, 'start');
 
         if (!$this->verifyGed()) {
         } else if (!$this->verifyDocExternId()) {
         } else {
-            $filename = $this->dirname_ged . '/' . $this->doc_extern_id;
+            /**
+             * @var \FreeEDMS\Model\GedDocument $ged
+             */
+            $ged = \FreeEDMS\Model\GedDocument::findFirst(
+                [
+                    'doc_extern_id' => $this->doc_extern_id
+                ]
+            );
 
-            if (!is_file($filename) && $p_file_must_exists) { // si le fichier n'existe pas on sort
+            if (!$ged) {
                 $this->addError(
-                    FECST::ERROR_GED_EXTERNID_NOT_FILE,
-                    sprintf(FECST::ERROR_GED_EXTERNID_NOT_FILE_TEXT,$this->doc_extern_id),
+                    FECST::ERROR_GED_EXTERNID_NOT_FOUND,
+                    sprintf(FECST::ERROR_GED_EXTERNID_NOT_FOUND_TEXT,$this->doc_extern_id),
                     \FreeFW\Core\Error::TYPE_PRECONDITION
                 );
-            } else {
+            }
+
+            if (!$this->hasErrors()) {
                 /**
-                 * @var \FreeEDMS\Model\GedDocument $ged
+                 * @var \FreeEDMS\Model\GedDocumentVersion $ged_ver
                  */
-                $ged = \FreeEDMS\Model\GedDocument::find(
+                $ged_ver = \FreeEDMS\Model\GedDocumentVersion::findFirst(
                     [
-                        'doc_extern_id' => $this->doc_extern_id
+                        'doc_id' => $ged->getDocId(),
+                        'dver_parent_id' => 0
                     ]
                 );
 
-                if (!$ged && $p_file_must_exists) {
+                if (!$ged_ver) {
                     $this->addError(
                         FECST::ERROR_GED_EXTERNID_NOT_FOUND,
                         sprintf(FECST::ERROR_GED_EXTERNID_NOT_FOUND_TEXT,$this->doc_extern_id),
                         \FreeFW\Core\Error::TYPE_PRECONDITION
                     );
-                } else {
+                }
+            }
+
+            if (!$this->hasErrors()) {
+                /**
+                 * @var \FreeEDMS\Model\GedDocumentVersion $ged_ver
+                 */
+                $del_ged_ver = \FreeEDMS\Model\GedDocumentVersion::delete(
+                    [
+                        'dver_id' => $ged_ver->getDverId(),
+                    ]
+                );
+
+                if (!$del_ged_ver) {
+                    $this->addError(
+                        FECST::ERROR_GED_NOT_DELETE_FILE,
+                        FECST::ERROR_GED_NOT_DELETE_FILE_TEXT,
+                        \FreeFW\Core\Error::TYPE_PRECONDITION
+                    );
+
+                    if ($del_ged_ver->hasErrors()) {
+                        $this->addErrors($del_ged_ver->getErrors());
+                    }
+                }
+            }
+
+            if (!$this->hasErrors()) {
+                if ($ged_ver->getDverParentId() == 0) {
                     /**
                      * @var \FreeEDMS\Model\GedDocument $ged
                      */
-                    $ged = \FreeEDMS\Model\GedDocument::delete(
+                    $del_ged = \FreeEDMS\Model\GedDocument::delete(
                         [
-                            'doc_extern_id' => $this->doc_extern_id
+                            'doc_id' => $ged->getDocId(),
                         ]
                     );
 
-                    if (!$ged) {
+                    if (!$del_ged) {
                         $this->addError(
                             FECST::ERROR_GED_NOT_DELETE_FILE,
-                            sprintf(FECST::ERROR_GED_NOT_DELETE_FILE_TEXT,$this->doc_extern_id),
+                            FECST::ERROR_GED_NOT_DELETE_FILE_TEXT,
                             \FreeFW\Core\Error::TYPE_PRECONDITION
                         );
 
-                        if ($ged->hasError()) {
-                            $this->addErrors($ged->hasError());
+                        if ($del_ged->hasErrors()) {
+                            $this->addErrors($del_ged->getErrors());
                         }
-                    } else {
-                        if (@unlink($filename)===true || !$p_file_must_exists) {
-                            $this->_debug(__METHOD__, 'end');
-                            return true;
-                        }
-
-                        $this->logger->critical(sprintf(FECST::ERROR_GED_NOT_DELETE_FILE_TEXT,$this->doc_extern_id));
-
-                        $this->addError(
-                            FECST::ERROR_GED_NOT_REMOVE_FILE,
-                            FECST::ERROR_GED_NOT_REMOVE_FILE_TEXT,
-                            \FreeFW\Core\Error::TYPE_PRECONDITION
-                        );
                     }
+                } else {
+                    // le parent_id devient le courant ?
                 }
+            }
+
+            if (!$this->hasErrors()) {
+                $filename = $ged_ver->getDverLocal();
+
+                if (!is_file($filename)) { // si le fichier n'est pas un fichier, on ne fait rien !
+                    return true;
+                } else if (@unlink($filename)===true) {
+                    $this->_debug(__METHOD__, 'end');
+                    return true;
+                }
+
+                $this->logger->critical(sprintf(FECST::ERROR_GED_NOT_REMOVE_FILE_TEXT,$this->doc_extern_id));
+
+                $this->addError(
+                    FECST::ERROR_GED_NOT_REMOVE_FILE,
+                    sprintf(FECST::ERROR_GED_NOT_REMOVE_FILE_TEXT,$this->doc_extern_id),
+                    \FreeFW\Core\Error::TYPE_PRECONDITION
+                );
             }
         }
 
@@ -233,7 +292,7 @@ class Edms implements
             /**
              * @var \FreeEDMS\Model\GedDocument $ged
              */
-            $ged = \FreeEDMS\Model\GedDocument::find(
+            $ged = \FreeEDMS\Model\GedDocument::findFirst(
                 [
                     'doc_extern_id' => $this->doc_extern_id
                 ]
@@ -246,33 +305,59 @@ class Edms implements
                     \FreeFW\Core\Error::TYPE_PRECONDITION
                 );
 
-//                if ($ged->hasError()) {
-//                    $this->addErrors($ged->hasError());
-//                }
-            } else {
-                $filename = $this->dirname_ged . '/' . $this->doc_extern_id;
+//              if ($ged->(hasErrors)) {
+//                  $this->addErrors($ged->getErrors());
+//              }
 
-                if (!is_file($filename)) {
+                return false;
+            }
+
+            /**
+             * @var \FreeEDMS\Model\GedDocumentVersion $ged_ver
+             */
+            $ged_ver = \FreeEDMS\Model\GedDocumentVersion::findFirst(
+                [
+                    'doc_id' => $ged->getDocId(),
+                    'dver_parent_id' => 0
+                ]
+            );
+
+            if (!$ged_ver) {
+                $this->addError(
+                    FECST::ERROR_GED_EXTERNID_NOT_FOUND,
+                    sprintf(FECST::ERROR_GED_EXTERNID_NOT_FOUND_TEXT,$this->doc_extern_id),
+                    \FreeFW\Core\Error::TYPE_PRECONDITION
+                );
+
+//              if ($ged->(hasErrors)) {
+//                  $this->addErrors($ged_ver->getErrors());
+//              }
+
+                return false;
+            }
+
+            $filename = $ged_ver->getDverLocal();
+
+            if (!is_file($filename)) {
+                $this->addError(
+                    FECST::ERROR_GED_EXTERNID_NOT_FILE,
+                    sprintf(FECST::ERROR_GED_EXTERNID_NOT_FILE_TEXT,$this->doc_extern_id),
+                    \FreeFW\Core\Error::TYPE_PRECONDITION
+                );
+            } else {
+                $this->content_file = @file_get_contents($filename);
+
+                if ($this->content_file === false) {
+                    $this->content_file = null;
+
                     $this->addError(
-                        FECST::ERROR_GED_EXTERNID_NOT_FILE,
-                        sprintf(FECST::ERROR_GED_EXTERNID_NOT_FILE_TEXT,$this->doc_extern_id),
-                        \FreeFW\Core\Error::TYPE_PRECONDITION
+                        FECST::ERROR_GED_GET_CONTENT_FILE,
+                        FECST::ERROR_GED_GET_CONTENT_FILE_TEXT,
+                        \FreeFW\Core\Error::TYPE_PRECONDITION,
                     );
                 } else {
-                    $this->content_file = @file_get_contents($filename);
-
-                    if ($this->content_file === false) {
-                        $this->content_file = null;
-
-                        $this->addError(
-                            FECST::ERROR_GED_GET_CONTENT_FILE,
-                            FECST::ERROR_GED_GET_CONTENT_FILE_TEXT,
-                            \FreeFW\Core\Error::TYPE_PRECONDITION,
-                        );
-                    } else {
-                        $this->_debug(__METHOD__, 'end');
-                        return true;
-                    }
+                    $this->_debug(__METHOD__, 'end');
+                    return true;
                 }
             }
         }
@@ -286,7 +371,7 @@ class Edms implements
      * @return boolean
      */
     public function verifyGed() {
-        if (!is_dir($this->dirname_ged)) { // si ce n'est pas un répertoire on ne fait rien !
+        if (!is_dir(rtrim(self::$dirname_ged,'/'))) { // si ce n'est pas un répertoire on ne fait rien !
             $this->addError(
                 FECST::ERROR_GED_NOT_INSTALLED,
                 FECST::ERROR_GED_NOT_INSTALLED_TEXT,
@@ -304,7 +389,7 @@ class Edms implements
      * @return boolean
      */
     public function verifyDocFilename() {
-        if ($this->getDocFilename() === '' || $this->getDocFilename() == null) {
+        if (empty($this->getDocFilename())) {
             $this->addError(
                 FECST::ERROR_GED_FILENAME_IS_MANDATORY,
                 FECST::ERROR_GED_FILENAME_IS_MANDATORY_TEXT,
@@ -320,10 +405,28 @@ class Edms implements
      * @return boolean
      */
     public function verifyDocExternId() {
-        if ($this->getDocExternId() === '' || $this->getDocExternId() == null) {
+        if (empty($this->getDocExternId())) {
             $this->addError(
-                FECST::ERROR_GED_EXTERNID_IS_MANDATORY,
-                FECST::ERROR_GED_EXTERNID_IS_MANDATORY_TEXT,
+                FECST::ERROR_GED_FIELD_IS_MANDATORY,
+                sprintf(FECST::ERROR_GED_FIELD_IS_MANDATORY_TEXT,'extern id'),
+                \FreeFW\Core\Error::TYPE_PRECONDITION
+            );
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Contrôle si l'extern_id est correct
+     * @return boolean
+     */
+    public function verifyDocOrigs() {
+        if (empty($this->getDocOrigTheme()) || empty($this->getDocOrigType()) || empty($this->getDocOrigAnyid())) {
+            $this->addError(
+                FECST::ERROR_GED_FIELD_IS_MANDATORY,
+                sprintf(FECST::ERROR_GED_FIELD_IS_MANDATORY_TEXT,'field orig'),
                 \FreeFW\Core\Error::TYPE_PRECONDITION
             );
 
@@ -352,8 +455,24 @@ class Edms implements
     }
 
     /**
+     * Contrôle si le nom du fichier est correct. On interdit :
+     * <br> - un nom sans nom !
+     * <br> - un nom > 120c
+     * <br> - oun nom contenant un ':' (sinon celui-ci est créé de taille 0 et devient inéffaçable)
+     * @param string $p_value nom du fichier à contrôler
+     * @return boolean
+     */
+    public function verifyFilename($p_value) {
+        if (empty($p_value) || strlen($p_value) > 120 || strpos($p_value,':')) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * Récupère le contenu du fichier à traiter
-     * @param string $p_value vers le contenu du fichier
+     * @param <b>pointer string</b> $p_value vers le contenu du fichier
      * @return \FreeEDMS\Core\Edms
      */
     public function setContentFile(&$p_value)
@@ -385,3 +504,16 @@ class Edms implements
         );
     }
 }
+
+/*
+$filename = self::$dirname_ged . $this->doc_extern_id;
+
+if (!is_file($filename) && $p_file_must_exists) { // si le fichier n'existe pas on sort
+    $this->addError(
+        FECST::ERROR_GED_EXTERNID_NOT_FILE,
+        sprintf(FECST::ERROR_GED_EXTERNID_NOT_FILE_TEXT,$this->doc_extern_id),
+        \FreeFW\Core\Error::TYPE_PRECONDITION
+        );
+} else {
+
+*/
